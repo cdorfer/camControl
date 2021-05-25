@@ -14,6 +14,7 @@ Usage:
 
 """
 
+import argparse
 import json
 import os
 import re
@@ -41,7 +42,11 @@ class CameraControl(object):
 
     def get_ctls(self):
         self.ctrls = {}
-        for line in self.cmd("-l"):
+        if self.device:
+            ret = self.cmd("-d", self.device, "-l")
+        else:
+            ret = self.cmd("-l")
+        for line in ret:
             m = self.RE_CTL.split(line)
             if not m:
                 continue
@@ -61,14 +66,18 @@ class CameraControl(object):
                 ctl[attr] = val
             self.ctrls[name] = ctl
 
-    def __init__(self):
+    def __init__(self, device):
+        self.device = device
         self.cmd = sh.Command("/usr/bin/v4l2-ctl")
         self.re_attrs = [(a, re.compile(a + r"=(-?\w+)")) for a in self.ATTRS]
         self.get_ctls()
 
     def getValue(self, name):
         try:
-            ret = self.cmd("--get-ctrl", name)
+            if self.device:
+                ret = self.cmd("-d", self.device, "--get-ctrl", name)
+            else:
+                ret = self.cmd("--get-ctrl", name)
             val = [int(s) for s in ret.split() if s.isdigit()]
             self.ctrls[name]["value"] = val[0]
             return val[0]
@@ -80,7 +89,10 @@ class CameraControl(object):
         if self.ctrls[name].get("flags", "") == "inactive":
             return True
         try:
-            self.cmd("--set-ctrl", (name+"="+str(val)))
+            if self.device:
+                self.cmd("-d", self.device, "--set-ctrl", (name+"="+str(val)))
+            else:
+                self.cmd("--set-ctrl", (name+"="+str(val)))
         except:
             print('Ups, could not set value for ', name, '.')
             return False
@@ -254,7 +266,13 @@ class Window(QWidget):
 
 
 if __name__ == '__main__':
-    camCtr = CameraControl()
+    parser = argparse.ArgumentParser(
+        description='Handle Camera Controls via v4l2-ctl.')
+    parser.add_argument(
+        '--device', '-d', type=str, default ='',
+        help='v4l2 to use, use "v4l2-ctl --list-devices" to list all of them')
+    args = parser.parse_args()
+    camCtr = CameraControl(args.device)
     app = QApplication(sys.argv)
     window = Window(camCtr)
     sys.exit(app.exec_())
